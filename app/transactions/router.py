@@ -4,7 +4,7 @@ from datetime import datetime
 from app.db import get_tokens
 from app.guards import is_owner
 from app.handlers.menus import main_menu
-from app.transactions.utils import generate_tx_hash, generate_fee, parse_date_input
+from app.transactions.utils import generate_tx_hash, generate_fee_for_token, parse_date_input
 from .states import IncomeStates
 from .keyboards import tokens_keyboard, skip_cancel_keyboard, now_cancel_keyboard
 from .helpers import handle_cancel, handle_cancel_callback, finish_transaction
@@ -89,35 +89,42 @@ async def handle_date_callback(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_text("Введите адрес отправителя:")
         await call.answer()
 
-
-
     elif call.data == "skip":
+        if current_state == IncomeStates.entering_tx_hash:
+            # Пропуск хеша
+            tx_hash = generate_tx_hash()
+            await state.update_data(tx_hash=tx_hash)
+            await state.set_state(IncomeStates.entering_fee)
+            await call.message.edit_text(
+                f"✅ Сгенерирован хеш: `{tx_hash[:20]}...`\n\n💰 Комиссия сети:",
+                parse_mode="Markdown",
+                reply_markup=skip_cancel_keyboard()
+            )
+            await call.answer()
 
-        if current_state == IncomeStates.entering_fee:
-            # Получаем данные чтобы узнать токен
-
+        elif current_state == IncomeStates.entering_fee:
+            # Пропуск комиссии
             data = await state.get_data()
-
             token_symbol = data.get('token_symbol', 'eth')
-
-            # Генерируем правильную комиссию
-
-            from app.transactions.utils import generate_fee_for_token
-
             fee = generate_fee_for_token(token_symbol)
 
             await state.update_data(fee=fee)
-
             await state.set_state(IncomeStates.entering_explorer_link)
-
             await call.message.edit_text(
-
                 f"✅ Сгенерирована комиссия: {fee}\n\n🌐 Ссылка на explorer:",
-
-                parse_mode="Markdown"
-
+                parse_mode="Markdown",
+                reply_markup=skip_cancel_keyboard()
             )
+            await call.answer()
 
+        elif current_state == IncomeStates.entering_explorer_link:
+            # Пропуск ссылки
+            await finish_transaction(
+                state=state,
+                explorer_link=None,
+                is_skip=True,
+                call=call
+            )
             await call.answer()
 
 
@@ -148,8 +155,10 @@ async def entering_from_address(message: types.Message, state: FSMContext):
 
     await state.update_data(from_address=from_address)
     await state.set_state(IncomeStates.entering_tx_hash)
-    await message.answer("🔗 Хеш транзакции:\n\nВведите хеш или напишите «пропустить» для автоматической генерации",
-                         reply_markup=skip_cancel_keyboard())
+    await message.answer(
+        "🔗 Хеш транзакции:\n\nВведите хеш или нажмите «Пропустить» для автоматической генерации",
+        reply_markup=skip_cancel_keyboard()
+    )
 
 
 @router.message(IncomeStates.entering_tx_hash)
@@ -160,12 +169,20 @@ async def entering_tx_hash(message: types.Message, state: FSMContext):
     tx_hash = message.text.strip()
     if tx_hash.lower() == "пропустить":
         tx_hash = generate_tx_hash()
-        await message.answer(f"✅ Сгенерирован хеш: `{tx_hash[:20]}...`", parse_mode="Markdown")
+        await message.answer(
+            f"✅ Сгенерирован хеш: `{tx_hash[:20]}...`",
+            parse_mode="Markdown",
+            reply_markup=skip_cancel_keyboard()
+        )
+    else:
+        await message.answer("✅ Хеш принят!", reply_markup=skip_cancel_keyboard())
 
     await state.update_data(tx_hash=tx_hash)
     await state.set_state(IncomeStates.entering_fee)
-    await message.answer("💰 Комиссия сети:\n\nВведите сумму комиссии или «пропустить» для случайной генерации",
-                         reply_markup=skip_cancel_keyboard())
+    await message.answer(
+        "💰 Комиссия сети:\n\nВведите сумму комиссии или нажмите «Пропустить» для случайной генерации",
+        reply_markup=skip_cancel_keyboard()
+    )
 
 
 @router.message(IncomeStates.entering_fee)
@@ -176,15 +193,14 @@ async def entering_fee(message: types.Message, state: FSMContext):
     text = message.text.strip().lower()
 
     if text == "пропустить":
-        # символ токена из состояния
         data = await state.get_data()
-        token_symbol = data.get('token_symbol', 'eth')  # по дефолту ETH
-
-        # реалистичная комиссия для этого токена
-        from app.transactions.utils import generate_fee_for_token
+        token_symbol = data.get('token_symbol', 'eth')
         fee = generate_fee_for_token(token_symbol)
 
-        await message.answer(f"✅ Сгенерирована комиссия: {fee}")
+        await message.answer(
+            f"✅ Сгенерирована комиссия: {fee}",
+            reply_markup=skip_cancel_keyboard()
+        )
     else:
         try:
             fee = float(text)
@@ -196,8 +212,10 @@ async def entering_fee(message: types.Message, state: FSMContext):
 
     await state.update_data(fee=fee)
     await state.set_state(IncomeStates.entering_explorer_link)
-    await message.answer("🌐 Ссылка на explorer (например, etherscan.io):\n\nВведите ссылку или «пропустить»",
-                         reply_markup=skip_cancel_keyboard())
+    await message.answer(
+        "🌐 Ссылка на explorer (например, etherscan.io):\n\nВведите ссылку или нажмите «Пропустить»",
+        reply_markup=skip_cancel_keyboard()
+    )
 
 
 @router.message(IncomeStates.entering_explorer_link)
