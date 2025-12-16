@@ -4,15 +4,14 @@ from app.handlers.menus import main_menu
 from app.guards import is_owner
 
 from app.transactions.router import router as income_router
-from app.handlers.tokens import router as tokens_router
+from app.tokens.router import router as tokens_router
 from app.transactions.history import router as history_router
 
 router = Router()
 
 # ВАЖНО: income_router ПЕРВЫМ - его обработчики с FSM должны регистрироваться раньше
-# ПИЗДЕЦ, в 2 часа ночи такое писать
 router.include_router(income_router)
-router.include_router(tokens_router)  # Дальше только токены идут
+router.include_router(tokens_router)
 router.include_router(history_router)
 
 
