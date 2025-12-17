@@ -322,7 +322,7 @@ async def entering_time(message: types.Message, state: FSMContext):
 
 @router.message(OutcomeStates.entering_to_address)
 async def entering_to_address(message: types.Message, state: FSMContext):
-    """Ввод адреса получателя"""
+    """Ввод адреса получателя с валидацией"""
     if await handle_cancel_outcome(message, state):
         return
 
@@ -331,6 +331,28 @@ async def entering_to_address(message: types.Message, state: FSMContext):
     if not to_address:
         await message.answer(
             "❌ Адрес не может быть пустым",
+            reply_markup=simple_cancel_keyboard()
+        )
+        return
+
+    from .utils import validate_crypto_address
+    is_valid, error_message = validate_crypto_address(to_address)
+
+    if not is_valid:
+        error_text = f"❌ Неверный формат адреса!\n\n{error_message}\n\n"
+
+        # Добавляем подсказку в зависимости от типа адреса
+        if to_address.startswith('0x') and len(to_address) < 42:
+            error_text += f"💡 Ethereum/BSC адрес должен быть 42 символа.\nПример: 0x742d35Cc6634C0532925a3b844Bc9e..."
+        elif to_address.startswith('0x') and len(to_address) > 42:
+            error_text += f"💡 Ethereum/BSC адрес должен быть ровно 42 символа."
+        elif 'l' in to_address.lower() or 'o' in to_address.lower() or 'i' in to_address.lower():
+            error_text += "💡 В крипто-адресах используются только цифры 0-9 и буквы a-f (A-F).\nБуквы i, I, l, L, o, O не используются."
+
+        error_text += "\n\nВведите корректный адрес получателя:"
+
+        await message.answer(
+            error_text,
             reply_markup=simple_cancel_keyboard()
         )
         return
@@ -351,6 +373,7 @@ async def entering_to_address(message: types.Message, state: FSMContext):
     await state.set_state(OutcomeStates.entering_tx_hash)
 
     await message.answer(
+        "✅ Адрес принят!\n\n"
         "🔗 Хеш транзакции:\n\n"
         "Введите хеш транзакции или нажмите «Пропустить» для автоматической генерации",
         reply_markup=skip_cancel_keyboard()

@@ -1,4 +1,4 @@
-from watchgod import run_process
+from watchdog import run_process
 
 def start_bot():
     import asyncio
