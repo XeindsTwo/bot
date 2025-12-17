@@ -8,20 +8,18 @@ from app.transactions.utils import parse_time_input, validate_crypto_address
 from .states import IncomeStates
 from .keyboards import (
     tokens_keyboard, time_option_keyboard, skip_cancel_keyboard,
-    month_days_keyboard, time_cancel_keyboard, simple_cancel_keyboard
+    month_days_keyboard, time_cancel_keyboard, simple_cancel_keyboard, now_cancel_keyboard
 )
-# Импортируем функции из helpers.py
+
 from .helpers import (
     handle_cancel_in_message,
     handle_skip_in_message,
     finish_transaction,
-    handle_cancel_callback,  # если нужен
+    handle_cancel_callback,
     CANCEL_TEXT
 )
 
 router = Router()
-# УДАЛИ ЭТУ СТРОКУ, так как CANCEL_TEXT уже импортирован из helpers.py
-# CANCEL_TEXT = "❌ Отменить создание"
 
 
 # ========== ОСНОВНЫЕ ОБРАБОТЧИКИ ==========
@@ -162,10 +160,8 @@ async def switch_month_callback(call: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(lambda c: c.data.startswith("day_"))
 async def choose_day_callback(call: types.CallbackQuery, state: FSMContext):
-    if call.data == "cancel":
-        await state.clear()
-        await call.message.edit_text("❌ Создание отменено", reply_markup=main_menu())
-        await call.answer()
+    """Обработка выбора дня (унифицированная версия как в outcome)"""
+    if await handle_cancel_callback(call, state):  # используем общий обработчик отмены
         return
 
     day_data = call.data.replace("day_", "")
@@ -173,10 +169,13 @@ async def choose_day_callback(call: types.CallbackQuery, state: FSMContext):
 
     if day_data == "today":
         selected_date = today
+        year, month, day = today.year, today.month, today.day
     elif day_data == "tomorrow":
         selected_date = today + timedelta(days=1)
+        year, month, day = selected_date.year, selected_date.month, selected_date.day
     elif day_data == "after_tomorrow":
         selected_date = today + timedelta(days=2)
+        year, month, day = selected_date.year, selected_date.month, selected_date.day
     else:
         try:
             year_str, month_str, day_str = day_data.split("_")
@@ -185,27 +184,40 @@ async def choose_day_callback(call: types.CallbackQuery, state: FSMContext):
             day = int(day_str)
             selected_date = datetime(year, month, day)
         except:
-            await call.answer("❌ Ошибка", show_alert=True)
+            await call.answer("❌ Ошибка формата даты", show_alert=True)
             return
 
     await state.update_data(
         selected_date=selected_date,
-        base_date=selected_date.strftime("%Y-%m-%d")
+        base_date=selected_date.strftime("%Y-%m-%d"),
+        selected_year=year,
+        selected_month=month
     )
     await state.set_state(IncomeStates.entering_time)
+
+    await call.message.edit_text(
+        f"📅 День: {day}.{month}.{year}\n\n"
+        f"⏰ Введите время в формате ЧЧ ММ (например: 14 30)\n"
+        f"Или просто ЧЧ (например: 9 → будет 09:00)\n"
+        f"Или ЧЧ:ММ (например: 14:30)\n\n"
+        f"Часы: 0-23, минуты: 0-59\n\n"
+        f"Можете нажать «Выбрать текущую дату» для выбора сегодняшней даты",
+        reply_markup=now_cancel_keyboard()
+    )
 
     month_names = ["Января", "Февраля", "Марта", "Апреля", "Мая", "Июня",
                    "Июля", "Августа", "Сентября", "Октября", "Ноября", "Декабря"]
 
     await call.message.edit_text(
-        f"📅 Выбрана дата: {selected_date.day} {month_names[selected_date.month - 1]} {selected_date.year}\n\n"
-        f"⏰ Введите время (ЧЧ ММ или ЧЧ:ММ):\n\n"
-        f"Часы: 0-23, минуты: 0-59",
-        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="⏰ Сейчас", callback_data="now_time")],
-            [types.InlineKeyboardButton(text=CANCEL_TEXT, callback_data="cancel")]
-        ])
+        f"📅 Выбрана дата: {day} {month_names[month - 1]} {year}\n\n"
+        f"⏰ Введите время в формате ЧЧ ММ (например: 14 30)\n"
+        f"Или просто ЧЧ (например: 9 → будет 09:00)\n"
+        f"Или ЧЧ:ММ (например: 14:30)\n\n"
+        f"Часы: 0-23, минуты: 0-59\n\n"
+        f"Можете нажать «Выбрать текущую дату» для выбора сегодняшней даты",
+        reply_markup=now_cancel_keyboard()
     )
+
     await call.answer()
 
 
@@ -232,6 +244,7 @@ async def handle_now_time(call: types.CallbackQuery, state: FSMContext):
 
 @router.message(IncomeStates.entering_time)
 async def entering_time(message: types.Message, state: FSMContext):
+    """Ввод времени (улучшенная версия как в outcome)"""
     if await handle_cancel_in_message(message, state):
         return
 
@@ -239,7 +252,11 @@ async def entering_time(message: types.Message, state: FSMContext):
 
     if not time_data:
         await message.answer(
-            "❌ Неверный формат времени.\nИспользуйте: 14 30, 9, 14:30",
+            "❌ Неверный формат времени.\n\nИспользуйте:\n"
+            "• 14 30 (часы и минуты через пробел)\n"
+            "• 9 (только часы, минуты будут 00)\n"
+            "• 14:30 (через двоеточие)\n\n"
+            "Часы: 0-23, минуты: 0-59",
             reply_markup=time_cancel_keyboard()
         )
         return
@@ -376,7 +393,7 @@ async def finish_income(message: types.Message, state: FSMContext):
 
 
 # ========== ОБРАБОТЧИКИ КНОПОК ==========
-@router.callback_query(lambda c: c.data == "skip")
+@router.callback_query(lambda c: c.data == "skip_transactions")
 async def handle_skip_button(call: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Пропустить'"""
     current_state = await state.get_state()

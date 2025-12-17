@@ -5,7 +5,7 @@ from app.guards import is_owner
 
 from app.transactions.router import router as income_router
 from app.tokens.router import router as tokens_router
-from app.transactions.history import router as history_router
+from app.handlers.history.router import router as history_router
 from app.outcome.router import router as outcome_router
 
 router = Router()
@@ -25,12 +25,3 @@ async def start(message: types.Message):
         "👋 Привет!\n\nЭто админ-панель кошелька",
         reply_markup=main_menu()
     )
-
-
-@router.callback_query(lambda c: c.data == "history")
-async def history_callback(call: types.CallbackQuery):
-    if not is_owner(call.from_user.id):
-        return
-
-    await call.message.answer("📜 История транзакций")
-    await call.answer()

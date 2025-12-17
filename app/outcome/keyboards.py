@@ -37,7 +37,7 @@ def time_option_keyboard():
 def skip_cancel_keyboard():
     """Клавиатура с пропуском"""
     return types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="Пропустить", callback_data="skip")],
+        [types.InlineKeyboardButton(text="Пропустить", callback_data="skip_outcome")],
         [types.InlineKeyboardButton(text=CANCEL_TEXT, callback_data="cancel")]
     ])
 

@@ -200,15 +200,14 @@ async def choose_day_callback(call: types.CallbackQuery, state: FSMContext):
     )
     await state.set_state(OutcomeStates.entering_time)
 
-    # ИСПРАВЛЕНО: Убрал Markdown разметку
     await call.message.edit_text(
         f"📅 День: {selected_day}.{month}.{year}\n\n"
         f"⏰ Введите время в формате ЧЧ ММ (например: 14 30)\n"
         f"Или просто ЧЧ (например: 9 → будет 09:00)\n"
         f"Или ЧЧ:ММ (например: 14:30)\n\n"
         f"Часы: 0-23, минуты: 0-59\n\n"
-        f"Можете нажать «Сейчас» для текущего времени",
-        reply_markup=now_cancel_keyboard()  # ← БЕЗ parse_mode!
+        f"Можете нажать «Выбрать текущую дату» для выбора сегодняшней даты",
+        reply_markup=now_cancel_keyboard()
     )
     await call.answer()
 
@@ -289,14 +288,13 @@ async def entering_time(message: types.Message, state: FSMContext):
     time_data = parse_time_input(message.text)
 
     if not time_data:
-        # ИСПРАВЛЕНО: Убрал Markdown разметку
         await message.answer(
             "❌ Неверный формат времени.\n\nИспользуйте:\n"
             "• 14 30 (часы и минуты через пробел)\n"
             "• 9 (только часы, минуты будут 00)\n"
             "• 14:30 (через двоеточие)\n\n"
             "Часы: 0-23, минуты: 0-59",
-            reply_markup=time_cancel_keyboard()  # ← БЕЗ parse_mode!
+            reply_markup=time_cancel_keyboard()
         )
         return
 
@@ -546,7 +544,7 @@ async def handle_confirmation(call: types.CallbackQuery, state: FSMContext):
         await call.answer()
 
 
-@router.callback_query(lambda c: c.data == "skip")
+@router.callback_query(lambda c: c.data == "skip_outcome")
 async def handle_skip_outcome(call: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Пропустить'"""
     current_state = await state.get_state()
