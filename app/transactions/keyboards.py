@@ -1,15 +1,17 @@
 from aiogram import types
-from datetime import datetime
-from .helpers import CANCEL_TEXT
+from datetime import datetime, timedelta
+
+CANCEL_TEXT = "❌ Отменить создание"
 
 
 def tokens_keyboard(tokens):
+    """Клавиатура для выбора токена"""
     keyboard = []
     row = []
 
     for i, t in enumerate(tokens, 1):
         row.append(types.InlineKeyboardButton(text=str(t[2]), callback_data=f"token_{t[0]}"))
-        if i % 4 == 0:
+        if i % 2 == 0:  # По 2 в строке, как в outcome
             keyboard.append(row)
             row = []
 
@@ -20,24 +22,25 @@ def tokens_keyboard(tokens):
     return types.InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def skip_cancel_keyboard():
-    keyboard = [
-        [types.InlineKeyboardButton(text="⏭ Пропустить", callback_data="skip")],
-        [types.InlineKeyboardButton(text=CANCEL_TEXT, callback_data="cancel")]
-    ]
-    return types.InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-
-def now_cancel_keyboard():
-    keyboard = [
+def time_option_keyboard():
+    """Клавиатура выбора опции времени"""
+    return types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="⏰ Сейчас", callback_data="now")],
+        [types.InlineKeyboardButton(text="📅 Выбрать дату", callback_data="choose_date")],
         [types.InlineKeyboardButton(text=CANCEL_TEXT, callback_data="cancel")]
-    ]
-    return types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    ])
+
+
+def skip_cancel_keyboard():
+    """Клавиатура с пропуском"""
+    return types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text="Пропустить", callback_data="skip")],
+        [types.InlineKeyboardButton(text=CANCEL_TEXT, callback_data="cancel")]
+    ])
 
 
 def month_days_keyboard(year=None, month=None):
-    """Клавиатура с днями месяца и навигацией по месяцам"""
+    """Простой календарь как в outcome"""
     today = datetime.now()
 
     if year is None:
@@ -45,75 +48,29 @@ def month_days_keyboard(year=None, month=None):
     if month is None:
         month = today.month
 
-    # Определяем следующий и предыдущий месяцы
-    if month == 1:
-        prev_month = datetime(year - 1, 12, 1)
-        next_month = datetime(year, 2, 1)
-    elif month == 12:
-        prev_month = datetime(year, 11, 1)
+    # Определяем количество дней в месяце
+    if month == 12:
         next_month = datetime(year + 1, 1, 1)
     else:
-        prev_month = datetime(year, month - 1, 1)
         next_month = datetime(year, month + 1, 1)
 
-    # Количество дней в месяце
     days_in_month = (next_month - datetime(year, month, 1)).days
 
-    # Названия месяцев
-    month_names = [
-        "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-        "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
-    ]
-    month_name = month_names[month - 1]
-
-    # Создаем кнопки
     buttons = []
-
-    # Навигация по месяцам
-    buttons.append([
-        types.InlineKeyboardButton(text="◀️", callback_data=f"prev_month_{prev_month.year}_{prev_month.month}"),
-        types.InlineKeyboardButton(text=f"{month_name} {year}", callback_data="ignore"),
-        types.InlineKeyboardButton(text="▶️", callback_data=f"next_month_{next_month.year}_{next_month.month}")
-    ])
-
-    # Дни недели
-    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-    weekday_buttons = [types.InlineKeyboardButton(text=day, callback_data="ignore") for day in weekdays]
-    buttons.append(weekday_buttons)
-
-    # Первый день месяца
-    first_day = datetime(year, month, 1)
-    start_offset = (first_day.weekday() + 1) % 7  # Пн = 0, Вс = 6
-
     row = []
 
-    # Пустые кнопки для смещения
-    for _ in range(start_offset):
-        row.append(types.InlineKeyboardButton(text=" ", callback_data="ignore"))
-
-    # Дни месяца
     for day in range(1, days_in_month + 1):
-        current_date = datetime(year, month, day)
-        is_today = (current_date.date() == today.date())
-        is_future = (current_date.date() > today.date())
-
-        if is_today:
-            text = f"📍{day}"
-        elif is_future:
-            text = f"🔸{day}"
-        else:
-            text = str(day)
-
-        row.append(types.InlineKeyboardButton(text=text, callback_data=f"day_{year}_{month}_{day}"))
-
+        is_today = (day == today.day and month == today.month and year == today.year)
+        text = f"📍 {day}" if is_today else str(day)
+        row.append(types.InlineKeyboardButton(
+            text=text,
+            callback_data=f"day_{year}_{month}_{day}"
+        ))
         if len(row) == 7:
             buttons.append(row)
             row = []
 
-    # Добиваем последнюю строку
     if row:
-        while len(row) < 7:
-            row.append(types.InlineKeyboardButton(text=" ", callback_data="ignore"))
         buttons.append(row)
 
     # Быстрые кнопки
@@ -123,21 +80,28 @@ def month_days_keyboard(year=None, month=None):
         types.InlineKeyboardButton(text="📅 Послезавтра", callback_data="day_after_tomorrow")
     ])
 
+    # Кнопки переключения месяцев
+    month_name = datetime(year, month, 1).strftime("%B %Y")
+    buttons.append([
+        types.InlineKeyboardButton(text="◀️", callback_data=f"month_prev_{year}_{month}"),
+        types.InlineKeyboardButton(text=month_name, callback_data="month_current"),
+        types.InlineKeyboardButton(text="▶️", callback_data=f"month_next_{year}_{month}")
+    ])
+
     buttons.append([types.InlineKeyboardButton(text=CANCEL_TEXT, callback_data="cancel")])
 
     return types.InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def time_cancel_keyboard():
-    keyboard = [
+    """Простая клавиатура для ввода времени"""
+    return types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=CANCEL_TEXT, callback_data="cancel")]
-    ]
-    return types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    ])
 
 
-def back_cancel_keyboard():
-    keyboard = [
-        [types.InlineKeyboardButton(text="🔙 Назад", callback_data="back")],
+def simple_cancel_keyboard():
+    """Простая клавиатура с отменой"""
+    return types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text=CANCEL_TEXT, callback_data="cancel")]
-    ]
-    return types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    ])

@@ -4,85 +4,32 @@ from datetime import datetime, timedelta
 import hashlib
 
 
-def validate_crypto_address(address, crypto_type=None):
-    """
-    Валидация крипто-адресов
-    crypto_type: 'tron', 'btc', 'eth', 'bnb' или None (автоопределение)
-    """
+def validate_crypto_address(address):
+    """Простая валидация - только длина и префикс"""
     address = address.strip()
 
-    # Общие проверки
     if not address:
-        return False, "❌ Адрес не может быть пустым"
+        return False, "Адрес не может быть пустым"
 
-    if len(address) < 10:
-        return False, "❌ Адрес слишком короткий"
-
-    # Определяем тип по префиксу если не указан
-    if crypto_type is None:
-        if address.startswith('T'):
-            crypto_type = 'tron'
-        elif address.startswith(('1', '3', 'bc1')):
-            crypto_type = 'btc'
-        elif address.startswith(('0x', '0X')):
-            crypto_type = 'eth'
-        elif address.startswith('bnb'):
-            crypto_type = 'bnb'
-        else:
-            crypto_type = 'unknown'
-
-    # Валидация по типу
-    if crypto_type == 'tron':
-        if not address.startswith('T'):
-            return False, "❌ TRON адрес должен начинаться с 'T'"
+    # TRON
+    if address.startswith('T'):
         if len(address) < 26:
-            return False, f"❌ TRON адрес слишком короткий ({len(address)} символов). Минимум 26"
-        # Проверка символов (только hex)
-        allowed_chars = set('0123456789abcdefABCDEF')
-        address_clean = address[1:]  # Убираем T
-        invalid_chars = set(address_clean) - allowed_chars
-        if invalid_chars:
-            return False, f"❌ Неверные символы в TRON адресе: {''.join(invalid_chars)}\n💡 Используйте только цифры 0-9 и буквы a-f/A-F"
-        return True, "✅ TRON адрес валиден"
+            return False, f"TRON адрес слишком короткий ({len(address)} символов). Минимум 26"
+        return True, "TRON адрес принят"
 
-    elif crypto_type == 'btc':
-        if not address.startswith(('1', '3', 'bc1')):
-            return False, "❌ BTC адрес должен начинаться с '1', '3' или 'bc1'"
+    # ETH/BSC
+    elif address.startswith('0x'):
+        if len(address) != 42:
+            return False, f"ETH/BSC адрес должен быть 42 символа (получено {len(address)})"
+        return True, "ETH/BSC адрес принят"
+
+    # BTC
+    elif address.startswith(('1', '3', 'bc1')):
         if len(address) < 26 or len(address) > 90:
-            return False, f"❌ BTC адрес неверной длины ({len(address)} символов). Должно быть 26-90 символов"
+            return False, f"BTC адрес неверной длины ({len(address)} символов)"
+        return True, "BTC адрес принят"
 
-        # Проверка для Legacy/SegWit адресов (не bech32)
-        if not address.startswith('bc1'):
-            allowed_chars = set('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz')
-            invalid_chars = set(address) - allowed_chars
-            if invalid_chars:
-                bad_chars = ''.join([c for c in invalid_chars if c not in '0OIl'])
-                if bad_chars:
-                    return False, f"❌ Неверные символы в BTC адресе: {bad_chars}"
-        return True, "✅ BTC адрес валиден"
-
-    elif crypto_type == 'eth':
-        if not address.startswith('0x'):
-            return False, "❌ ETH адрес должен начинаться с '0x'"
-        if len(address) != 42:
-            return False, f"❌ ETH адрес должен быть 42 символа (получено {len(address)})"
-        # Проверка hex символов
-        hex_part = address[2:]
-        try:
-            int(hex_part, 16)
-        except ValueError:
-            return False, "❌ Неверный формат HEX в ETH адресе"
-        return True, "✅ ETH адрес валиден"
-
-    elif crypto_type == 'bnb':
-        if not address.startswith('bnb'):
-            return False, "❌ BNB адрес должен начинаться с 'bnb'"
-        if len(address) != 42:
-            return False, f"❌ BNB адрес должен быть 42 символа"
-        return True, "✅ BNB адрес валиден"
-
-    return True, "✅ Адрес принят (базовая проверка)"
-
+    return False, "Неизвестный формат адреса"
 
 def generate_tx_hash(crypto_type=None):
     """Генерация хеша транзакции для разных сетей"""
