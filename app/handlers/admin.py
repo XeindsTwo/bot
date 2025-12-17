@@ -6,10 +6,11 @@ from app.guards import is_owner
 from app.transactions.router import router as income_router
 from app.tokens.router import router as tokens_router
 from app.transactions.history import router as history_router
+from app.outcome.router import router as outcome_router
 
 router = Router()
 
-# ВАЖНО: income_router ПЕРВЫМ - его обработчики с FSM должны регистрироваться раньше
+router.include_router(outcome_router)
 router.include_router(income_router)
 router.include_router(tokens_router)
 router.include_router(history_router)
