@@ -1,8 +1,10 @@
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from app.config import BOT_TOKEN
-from app.handlers.admin import router as admin_router
+from .config import BOT_TOKEN
+from .handlers.admin import router as admin_router
+from .api.main import run_api
+import threading
 import logging
 
 logging.basicConfig(
@@ -11,15 +13,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-async def main():
+
+async def run_bot():
+    """Запуск Telegram бота"""
     bot = Bot(token=BOT_TOKEN)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
-
     dp.include_router(admin_router)
 
-    print("Бот запущен...")
+    logger.info("Бот запущен...")
     await dp.start_polling(bot)
+
+
+def run_fastapi():
+    """Запуск FastAPI сервера"""
+    logger.info("FastAPI запущен на http://localhost:8000")
+    run_api()
+
+
+async def main():
+    """Запускаем оба сервиса"""
+    # запуск FastAPI в отдельном потоке
+    api_thread = threading.Thread(target=run_fastapi, daemon=True)
+    api_thread.start()
+
+    await run_bot()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
