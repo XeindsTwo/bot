@@ -25,9 +25,8 @@ class ConnectionPool:
                 self._in_use.add(id(conn))
                 return conn
 
-        # Создаем новое, если не превышен лимит
         if len(self._connections) < self.max_connections:
-            conn = sqlite3.connect(self.database)
+            conn = sqlite3.connect(self.database, check_same_thread=False)
             conn.row_factory = sqlite3.Row  # Для удобства доступа по имени столбца
             self._connections.append(conn)
             self._in_use.add(id(conn))
@@ -267,3 +266,26 @@ def update_transaction_status(tx_id: int, status: str) -> bool:
         (status, tx_id)
     )
     return result is not None
+
+
+def update_token_balance(token_id: int, new_balance_usd: float):
+    """
+    Обновляет баланс токена в USD
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+                       UPDATE tokens
+                       SET balance = ?
+                       WHERE id = ?
+                       """, (new_balance_usd, token_id))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Ошибка обновления токена {token_id}: {e}")
+        return False
+    finally:
+        conn.close()
