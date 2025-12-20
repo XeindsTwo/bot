@@ -63,7 +63,7 @@ async def choose_token_callback(call: types.CallbackQuery, state: FSMContext):
         await call.answer("❌ Токен не найден", show_alert=True)
         return
 
-    token_id, symbol, name, enabled, address, balance, locked = token
+    token_id, symbol, name, enabled, address, balance, locked = token[:7][:7]
 
     if balance <= 0:
         await call.answer("❌ Баланс токена равен 0", show_alert=True)
@@ -112,7 +112,7 @@ async def entering_amount(message: types.Message, state: FSMContext):
         await message.answer("❌ Токен не найден", reply_markup=main_menu())
         return
 
-    token_id, symbol, name, enabled, address, balance, locked = token
+    token_id, symbol, name, enabled, address, balance, locked = token[:7]
 
     if amount > balance:
         await message.answer(
@@ -427,7 +427,7 @@ async def entering_fee(message: types.Message, state: FSMContext):
         await message.answer("❌ Токен не найден", reply_markup=main_menu())
         return
 
-    token_id, symbol, name, enabled, address, balance, locked = token
+    token_id, symbol, name, enabled, address, balance, locked = token[:7]
 
     text = message.text.strip().lower()
 
@@ -575,7 +575,7 @@ async def handle_skip_outcome(call: types.CallbackQuery, state: FSMContext):
         token = get_token_by_id(data['token_id'])
 
         if token:
-            token_id, symbol, name, enabled, address, balance, locked = token
+            token_id, symbol, name, enabled, address, balance, locked = token[:7]
             amount = data['amount']
             total_required = amount + fee
 

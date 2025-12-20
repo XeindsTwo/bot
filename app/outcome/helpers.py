@@ -50,7 +50,7 @@ async def finish_outcome_transaction(state: FSMContext, call: types.CallbackQuer
         await state.clear()
         return False
 
-    token_id, symbol, name, enabled, address, balance, locked = token
+    token_id, symbol, name, enabled, address, balance, locked = token[:7]
     total_debit = data['amount'] + data['fee']
 
     if total_debit > balance:

@@ -61,7 +61,7 @@ async def manage_token(call: types.CallbackQuery):
     if not token:
         await call.answer("❌ Токен не найден!", show_alert=True)
         return
-    token_id_int, symbol, name, enabled, address, balance, locked = token
+    token_id_int, symbol, name, enabled, address, balance, locked = token[:7]
     text = format_token_info(token, show_balance=True)
     keyboard = get_token_management_keyboard(str(token_id_int), locked=(locked == 1))
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -76,7 +76,7 @@ async def toggle_token_status(call: types.CallbackQuery):
     if not token:
         await call.answer("❌ Токен не найден!", show_alert=True)
         return
-    token_id_int, symbol, name, enabled, address, balance, locked = token
+    token_id_int, symbol, name, enabled, address, balance, locked = token[:7]
     if locked == 1:
         await call.answer("⚠️ Это системный токен, нельзя отключать!", show_alert=True)
         return
@@ -100,7 +100,7 @@ async def start_edit_address(call: types.CallbackQuery, state: FSMContext):
     if not token:
         await call.answer("❌ Токен не найден!", show_alert=True)
         return
-    token_id_int, symbol, name, enabled, address, balance, locked = token
+    token_id_int, symbol, name, enabled, address, balance, locked = token[:7]
     await state.update_data(
         token_id=str(token_id_int),
         token_name=name,

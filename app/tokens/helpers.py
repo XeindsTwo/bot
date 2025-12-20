@@ -16,7 +16,7 @@ def find_token_by_id(token_id: str):
 
 
 def format_token_info(token, show_balance: bool = True) -> str:
-    token_id, symbol, name, enabled, address, balance, locked = token
+    token_id, symbol, name, enabled, address, balance, locked = token[:7]
     info_parts = []
 
     if locked == 1:
@@ -75,7 +75,7 @@ def format_detailed_balances() -> str:
     all_tokens = tokens_with_balance + empty_tokens
 
     for token in all_tokens:
-        token_id, symbol, name, enabled, address, balance, locked = token
+        token_id, symbol, name, enabled, address, balance, locked = token[:7]
         total += balance
         if balance > 0:
             lines.append(f"• {name}: <code>${balance:,.2f}</code>")

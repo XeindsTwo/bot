@@ -23,7 +23,7 @@ def tokens_menu() -> InlineKeyboardMarkup:
     unlocked_tokens = [t for t in sorted_tokens if t[6] == 0]
 
     for token in locked_tokens:
-        token_id, symbol, name, enabled, address, balance, locked = token
+        token_id, symbol, name, enabled, address, balance, locked = token[:7]
         buttons.append([InlineKeyboardButton(
             text=f"🔒 {name}",
             callback_data=f"edit_{token_id}"
@@ -33,7 +33,7 @@ def tokens_menu() -> InlineKeyboardMarkup:
         buttons.append([])
 
     for token in unlocked_tokens:
-        token_id, symbol, name, enabled, address, balance, locked = token
+        token_id, symbol, name, enabled, address, balance, locked = token[:7]
         emoji = "✅" if enabled else "❌"
         status = " (вкл)" if enabled else " (выкл)"
         buttons.append([InlineKeyboardButton(

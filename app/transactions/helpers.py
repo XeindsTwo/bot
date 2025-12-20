@@ -109,7 +109,7 @@ async def finish_transaction(state: FSMContext, explorer_link: str = None, is_sk
         await state.clear()
         return False
 
-    token_id, symbol, name, enabled, address, balance, locked = token
+    token_id, symbol, name, enabled, address, balance, locked = token[:7]
 
     # Создаем транзакцию
     create_transaction(

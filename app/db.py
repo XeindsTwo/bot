@@ -1,16 +1,13 @@
 import sqlite3
 import logging
 from contextlib import contextmanager
-from typing import Any, Optional, List, Tuple
+from typing import Any, Optional, List
 
 DB_PATH = "bot.db"
 logger = logging.getLogger(__name__)
 
 
-# ========== УПРАВЛЕНИЕ ПОДКЛЮЧЕНИЯМИ ==========
 class ConnectionPool:
-    """Простой пул соединений для SQLite для снижения накладных расходов"""
-
     def __init__(self, database: str, max_connections: int = 5):
         self.database = database
         self.max_connections = max_connections
@@ -18,8 +15,6 @@ class ConnectionPool:
         self._in_use = set()
 
     def get_connection(self) -> sqlite3.Connection:
-        """Получить соединение из пула или создать новое"""
-        # Ищем свободное соединение
         for conn in self._connections:
             if id(conn) not in self._in_use:
                 self._in_use.add(id(conn))
@@ -27,27 +22,23 @@ class ConnectionPool:
 
         if len(self._connections) < self.max_connections:
             conn = sqlite3.connect(self.database, check_same_thread=False)
-            conn.row_factory = sqlite3.Row  # Для удобства доступа по имени столбца
+            conn.row_factory = sqlite3.Row
             self._connections.append(conn)
             self._in_use.add(id(conn))
-            logger.debug(f"Создано новое соединение. Всего в пуле: {len(self._connections)}")
             return conn
 
         raise RuntimeError("Достигнут лимит соединений в пуле")
 
     def return_connection(self, conn: sqlite3.Connection):
-        """Вернуть соединение в пул"""
         if id(conn) in self._in_use:
             self._in_use.remove(id(conn))
 
 
-# Глобальный пул соединений
 _connection_pool = ConnectionPool(DB_PATH)
 
 
 @contextmanager
 def get_db_connection():
-    """Контекстный менеджер для безопасной работы с БД"""
     conn = None
     try:
         conn = _connection_pool.get_connection()
@@ -64,24 +55,21 @@ def get_db_connection():
 
 @contextmanager
 def get_db_cursor():
-    """Контекстный менеджер для работы с курсором"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
             yield cursor
-            conn.commit()  # Фиксируем транзакцию при успехе
+            conn.commit()
         except Exception as e:
-            conn.rollback()  # Откатываем при ошибке [citation:5][citation:8]
+            conn.rollback()
             logger.error(f"Ошибка транзакции: {e}")
             raise
 
 
-# ========== БЕЗОПАСНЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С БД ==========
 def execute_query(query: str, params: tuple = ()) -> Optional[List[Any]]:
-    """Безопасное выполнение запроса с параметрами"""
     try:
         with get_db_cursor() as cursor:
-            cursor.execute(query, params)  # Параметризованный запрос[citation:2][citation:9]
+            cursor.execute(query, params)
             if query.strip().upper().startswith(('SELECT', 'PRAGMA')):
                 return cursor.fetchall()
     except Exception as e:
@@ -90,29 +78,67 @@ def execute_query(query: str, params: tuple = ()) -> Optional[List[Any]]:
 
 
 def executemany_query(query: str, params_list: List[tuple]) -> bool:
-    """Безопасное выполнение массовой вставки"""
     try:
         with get_db_cursor() as cursor:
-            cursor.executemany(query, params_list)  # Параметризованный запрос[citation:2]
+            cursor.executemany(query, params_list)
             return True
     except Exception as e:
         logger.error(f"Ошибка массовой вставки '{query}': {e}")
         return False
 
 
-# ========== ИНИЦИАЛИЗАЦИЯ БД ==========
+def add_new_columns():
+    """Добавляем новые колонки если их нет"""
+    try:
+        with get_db_cursor() as cursor:
+            cursor.execute("PRAGMA table_info(tokens)")
+            columns = [col[1] for col in cursor.fetchall()]
+
+            if 'full_name' not in columns:
+                cursor.execute("ALTER TABLE tokens ADD COLUMN full_name TEXT DEFAULT ''")
+                print("Добавлена колонка full_name")
+
+            if 'network' not in columns:
+                cursor.execute("ALTER TABLE tokens ADD COLUMN network TEXT DEFAULT ''")
+                print("Добавлена колонка network")
+
+            # Обновляем записи дефолтными значениями
+            token_defaults = {
+                "bnb": {"full_name": "BNB", "network": "BNB Smart Chain"},
+                "btc": {"full_name": "Bitcoin", "network": "Bitcoin"},
+                "eth": {"full_name": "Ethereum", "network": "Ethereum"},
+                "matic": {"full_name": "Polygon", "network": "Polygon"},
+                "tron": {"full_name": "TRON", "network": "TRON"},
+                "twt": {"full_name": "Trust Wallet Token", "network": "BNB Smart Chain"},
+                "usdt_erc20": {"full_name": "USDT", "network": "Ethereum"},
+                "usdt_trc20": {"full_name": "USDT", "network": "TRON"},
+                "usdt_bep20": {"full_name": "USDT", "network": "BNB Smart Chain"},
+                "ton": {"full_name": "TON", "network": "TON"},
+                "sol": {"full_name": "Solana", "network": "Solana"}
+            }
+
+            for token, defaults in token_defaults.items():
+                cursor.execute(
+                    "UPDATE tokens SET full_name = ?, network = ? WHERE token = ? AND (full_name = '' OR network = '')",
+                    (defaults["full_name"], defaults["network"], token)
+                )
+    except Exception as e:
+        print(f"Ошибка добавления колонок: {e}")
+
+
 def init_db():
-    """Инициализация базы данных с использованием транзакций"""
     init_queries = [
         """CREATE TABLE IF NOT EXISTS tokens
            (
-               id      INTEGER PRIMARY KEY,
-               token   TEXT UNIQUE,
-               name    TEXT,
-               enabled BOOLEAN DEFAULT 0,
-               address TEXT    DEFAULT '',
-               balance REAL    DEFAULT 0,
-               locked  BOOLEAN DEFAULT 0
+               id        INTEGER PRIMARY KEY,
+               token     TEXT UNIQUE,
+               name      TEXT,
+               enabled   BOOLEAN DEFAULT 0,
+               address   TEXT    DEFAULT '',
+               balance   REAL    DEFAULT 0,
+               locked    BOOLEAN DEFAULT 0,
+               full_name TEXT    DEFAULT '',
+               network   TEXT    DEFAULT ''
            )""",
         """CREATE TABLE IF NOT EXISTS transactions
            (
@@ -149,23 +175,22 @@ def init_db():
 
     try:
         with get_db_cursor() as cursor:
-            # Создаем таблицы
             for query in init_queries:
                 cursor.execute(query)
 
-            # Вставляем дефолтные токены (игнорируем дубликаты)
             for token, name, enabled, locked in default_tokens:
                 cursor.execute(
                     "INSERT OR IGNORE INTO tokens (token, name, enabled, locked) VALUES (?, ?, ?, ?)",
                     (token, name, enabled, locked)
                 )
 
-            # Вставляем админские токены
             for token, name in admin_tokens:
                 cursor.execute(
                     "INSERT OR IGNORE INTO tokens (token, name, locked) VALUES (?, ?, 0)",
                     (token, name)
                 )
+
+        add_new_columns()
 
         logger.info("База данных успешно инициализирована")
         return True
@@ -174,17 +199,14 @@ def init_db():
         return False
 
 
-# ========== ОСНОВНЫЕ ФУНКЦИИ ==========
 def get_tokens() -> List[sqlite3.Row]:
-    """Получить все токены (возвращает Row объекты для доступа по имени)"""
     result = execute_query(
-        "SELECT id, token, name, enabled, address, balance, locked FROM tokens"
+        "SELECT id, token, name, enabled, address, balance, locked, full_name, network FROM tokens"
     )
     return result or []
 
 
 def update_token(token_id: int, enabled: Optional[bool] = None, address: Optional[str] = None) -> bool:
-    """БЕЗОПАСНОЕ обновление токена по ID"""
     updates = []
     params = []
 
@@ -203,20 +225,18 @@ def update_token(token_id: int, enabled: Optional[bool] = None, address: Optiona
     query = f"UPDATE tokens SET {', '.join(updates)} WHERE id = ?"
 
     result = execute_query(query, tuple(params))
-    return result is not None  # execute_query возвращает None при ошибке
+    return result is not None
 
 
 def get_token_by_id(token_id: int) -> Optional[sqlite3.Row]:
-    """Получить токен по ID"""
     result = execute_query(
-        "SELECT id, token, name, enabled, address, balance, locked FROM tokens WHERE id = ?",
+        "SELECT id, token, name, enabled, address, balance, locked, full_name, network FROM tokens WHERE id = ?",
         (token_id,)
     )
     return result[0] if result else None
 
 
 def update_balance(token_id: int, delta: float) -> bool:
-    """Обновить баланс токена атомарно"""
     result = execute_query(
         "UPDATE tokens SET balance = balance + ? WHERE id = ?",
         (delta, token_id)
@@ -231,7 +251,6 @@ def create_transaction(
         date: str,
         **kwargs
 ) -> bool:
-    """Создать запись о транзакции"""
     query = """
             INSERT INTO transactions
             (token, type, amount, date, from_address, to_address, tx_hash, fee, explorer_link)
@@ -251,7 +270,6 @@ def create_transaction(
 
 
 def get_transactions(limit: int = 50) -> List[sqlite3.Row]:
-    """Получить последние транзакции"""
     result = execute_query(
         "SELECT * FROM transactions ORDER BY date DESC LIMIT ?",
         (limit,)
@@ -260,7 +278,6 @@ def get_transactions(limit: int = 50) -> List[sqlite3.Row]:
 
 
 def update_transaction_status(tx_id: int, status: str) -> bool:
-    """Обновить статус транзакции"""
     result = execute_query(
         "UPDATE transactions SET status = ? WHERE id = ?",
         (status, tx_id)
@@ -269,13 +286,11 @@ def update_transaction_status(tx_id: int, status: str) -> bool:
 
 
 def update_token_balance(token_id: int, new_balance_usd: float):
-    """
-    Обновляет баланс токена в USD
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
+    conn = None
     try:
+        conn = _connection_pool.get_connection()
+        cursor = conn.cursor()
+
         cursor.execute("""
                        UPDATE tokens
                        SET balance = ?
@@ -288,4 +303,5 @@ def update_token_balance(token_id: int, new_balance_usd: float):
         print(f"Ошибка обновления токена {token_id}: {e}")
         return False
     finally:
-        conn.close()
+        if conn:
+            _connection_pool.return_connection(conn)
