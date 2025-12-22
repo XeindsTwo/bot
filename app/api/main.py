@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 
-from .routers import tokens, transactions, images, alpha
+from .routers import tokens, transactions, images, alpha, token_detail
 
 
 @asynccontextmanager
@@ -24,6 +24,7 @@ app.include_router(tokens.router)
 app.include_router(transactions.router)
 app.include_router(images.router)
 app.include_router(alpha.router)
+app.include_router(token_detail.router)
 
 
 @app.get("/")

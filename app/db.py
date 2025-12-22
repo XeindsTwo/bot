@@ -249,12 +249,18 @@ def create_transaction(
         tx_type: str,
         amount: float,
         date: str,
+        source: str = "bot",
         **kwargs
 ) -> bool:
+    if source == "bot":
+        status = "confirmed"
+    else:
+        status = "pending"
+
     query = """
             INSERT INTO transactions
-            (token, type, amount, date, from_address, to_address, tx_hash, fee, explorer_link)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+            (token, type, amount, date, from_address, to_address, tx_hash, fee, explorer_link, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
             """
     params = (
         token, tx_type, amount, date,
@@ -262,7 +268,8 @@ def create_transaction(
         kwargs.get('to_addr', ''),
         kwargs.get('tx_hash', ''),
         kwargs.get('fee', 0),
-        kwargs.get('explorer_link', '')
+        kwargs.get('explorer_link', ''),
+        status
     )
 
     result = execute_query(query, params)
@@ -305,3 +312,146 @@ def update_token_balance(token_id: int, new_balance_usd: float):
     finally:
         if conn:
             _connection_pool.return_connection(conn)
+
+
+def get_transaction_by_id(transaction_id: int):
+    """Получить транзакцию по ID"""
+    try:
+        with get_db_cursor() as cursor:
+            cursor.execute("""
+                           SELECT id,
+                                  token,
+                                  type,
+                                  amount,
+                                  date,
+                                  from_address,
+                                  to_address,
+                                  tx_hash,
+                                  fee,
+                                  explorer_link,
+                                  status
+                           FROM transactions
+                           WHERE id = ?
+                           """, (transaction_id,))
+
+            row = cursor.fetchone()
+
+            if row:
+                return list(row)
+            return None
+
+    except Exception as e:
+        logger.error(f"[ERROR] get_transaction_by_id: {str(e)}")
+        return None
+
+
+def get_pending_transactions():
+    """
+    Получить все pending транзакции
+    """
+    try:
+        with get_db_cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM transactions 
+                WHERE status = 'pending'
+                ORDER BY date DESC
+            """)
+            transactions = cursor.fetchall()
+        return transactions
+    except Exception as e:
+        logger.error(f"[ERROR] get_pending_transactions: {str(e)}")
+        return []
+
+
+def get_transactions_by_token(token_symbol: str, limit: int = 100, offset: int = 0):
+    """Получает транзакции по конкретному токену с пагинацией"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        normalized_symbol = token_symbol.lower()
+
+        symbol_mapping = {
+            "trx": "tron",
+            "pol": "matic",
+            "usdt": ["usdt_erc20", "usdt_trc20", "usdt_bep20"]
+        }
+
+        if normalized_symbol in symbol_mapping:
+            if normalized_symbol == "usdt":
+                query = """
+                        SELECT * \
+                        FROM transactions
+                        WHERE token IN ('usdt_erc20', 'usdt_trc20', 'usdt_bep20')
+                        ORDER BY date DESC
+                        LIMIT ? OFFSET ? \
+                        """
+                cursor.execute(query, (limit, offset))
+            else:
+                db_symbol = symbol_mapping[normalized_symbol]
+                query = """
+                        SELECT * \
+                        FROM transactions
+                        WHERE token = ?
+                        ORDER BY date DESC
+                        LIMIT ? OFFSET ? \
+                        """
+                cursor.execute(query, (db_symbol, limit, offset))
+        else:
+            query = """
+                    SELECT * \
+                    FROM transactions
+                    WHERE token = ?
+                    ORDER BY date DESC
+                    LIMIT ? OFFSET ? \
+                    """
+            cursor.execute(query, (normalized_symbol, limit, offset))
+
+        transactions = cursor.fetchall()
+        conn.close()
+        return transactions
+
+    except Exception as e:
+        print(f"[ERROR] get_transactions_by_token: {e}")
+        return []
+
+
+# И добавь нормальную функцию get_transaction_count_by_token:
+def get_transaction_count_by_token(symbol: str):
+    """Получаем общее количество транзакций для токена"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        normalized_symbol = symbol.lower()
+
+        symbol_mapping = {
+            "trx": "tron",
+            "pol": "matic",
+            "usdt": ["usdt_erc20", "usdt_trc20", "usdt_bep20"]
+        }
+
+        if normalized_symbol in symbol_mapping:
+            if normalized_symbol == "usdt":
+                query = """
+                        SELECT COUNT(*) \
+                        FROM transactions
+                        WHERE token IN ('usdt_erc20', 'usdt_trc20', 'usdt_bep20')
+                        """
+                cursor.execute(query)
+            else:
+                db_symbol = symbol_mapping[normalized_symbol]
+                query = "SELECT COUNT(*) FROM transactions WHERE token = ?"
+                cursor.execute(query, (db_symbol,))
+        else:
+            query = "SELECT COUNT(*) FROM transactions WHERE token = ?"
+            cursor.execute(query, (normalized_symbol,))
+
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+
+    except Exception as e:
+        print(f"[ERROR] get_transaction_count_by_token: {e}")
+        return 0

@@ -111,14 +111,19 @@ async def finish_transaction(state: FSMContext, explorer_link: str = None, is_sk
 
     token_id, symbol, name, enabled, address, balance, locked = token[:7]
 
+    our_wallet_address = address  # Это адрес из колонки `address` в таблице tokens
+    tx_type = "income"
+    from_addr = data['from_address']
+    to_addr = our_wallet_address  # Для income - наш адрес
+
     # Создаем транзакцию
     create_transaction(
         token=symbol,
-        tx_type="income",
+        tx_type=tx_type,
         amount=data['amount'],
         date=data['tx_date'].strftime("%Y-%m-%d %H:%M"),
-        from_addr=data['from_address'],
-        to_addr="",
+        from_addr=from_addr,  # Адрес отправителя
+        to_addr=to_addr,  # НАШ адрес кошелька
         tx_hash=data['tx_hash'],
         fee=data['fee'],
         explorer_link=explorer_link
@@ -140,6 +145,7 @@ async def finish_transaction(state: FSMContext, explorer_link: str = None, is_sk
 
         f"<b>🔗 Блокчейн данные:</b>\n"
         f"• <b>Отправитель:</b>\n<code>{data['from_address']}</code>\n"
+        f"• <b>Получатель (Ваш кошелек):</b>\n<code>{our_wallet_address or 'Не указан'}</code>\n"
         f"• <b>Хеш транзакции:</b>\n<code>{data['tx_hash']}</code>"
     )
 
