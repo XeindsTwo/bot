@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 
 from .routers import tokens, transactions, images, alpha, token_detail
+from .routers.send_transaction import send
 
 
 @asynccontextmanager
@@ -25,6 +26,7 @@ app.include_router(transactions.router)
 app.include_router(images.router)
 app.include_router(alpha.router)
 app.include_router(token_detail.router)
+app.include_router(send.router)
 
 
 @app.get("/")
