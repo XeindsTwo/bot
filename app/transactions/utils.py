@@ -53,13 +53,13 @@ def generate_tx_hash(crypto_type=None):
 
 def generate_fee_for_token(token_symbol):
     fee_ranges_usd = {
-        'eth': (0.15, 0.7),
+        'eth': (2, 15),
         'bnb': (0.02, 0.15),
         'matic': (0.001, 0.02),
-        'usdt_erc20': (0.5, 5),
-        'usdt_bep20': (0.02, 0.2),
-        'usdt_trc20': (0.2, 1),
-        'btc': (1, 10),
+        'usdt_erc20': (5, 20),
+        'usdt_bep20': (0.5, 2),
+        'usdt_trc20': (0.1, 1),
+        'btc': (3, 15),
         'tron': (0, 0.5),
         'trx': (0, 0.5),
         'sol': (0.0001, 0.005),
