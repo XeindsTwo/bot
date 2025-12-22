@@ -285,11 +285,17 @@ def get_transactions(limit: int = 50) -> List[sqlite3.Row]:
 
 
 def update_transaction_status(tx_id: int, status: str) -> bool:
-    result = execute_query(
-        "UPDATE transactions SET status = ? WHERE id = ?",
-        (status, tx_id)
-    )
-    return result is not None
+    try:
+        with get_db_cursor() as cursor:
+            cursor.execute("""
+                UPDATE transactions 
+                SET status = ? 
+                WHERE id = ?
+            """, (status, tx_id))
+            return True
+    except Exception as e:
+        logger.error(f"[ERROR] update_transaction_status: {str(e)}")
+        return False
 
 
 def update_token_balance(token_id: int, new_balance_usd: float):
@@ -346,9 +352,6 @@ def get_transaction_by_id(transaction_id: int):
 
 
 def get_pending_transactions():
-    """
-    Получить все pending транзакции
-    """
     try:
         with get_db_cursor() as cursor:
             cursor.execute("""
@@ -356,8 +359,7 @@ def get_pending_transactions():
                 WHERE status = 'pending'
                 ORDER BY date DESC
             """)
-            transactions = cursor.fetchall()
-        return transactions
+            return cursor.fetchall()
     except Exception as e:
         logger.error(f"[ERROR] get_pending_transactions: {str(e)}")
         return []
@@ -455,3 +457,53 @@ def get_transaction_count_by_token(symbol: str):
     except Exception as e:
         print(f"[ERROR] get_transaction_count_by_token: {e}")
         return 0
+
+
+def deduct_token_balance(token_id: int, amount_usd: float) -> bool:
+    try:
+        with get_db_cursor() as cursor:
+            cursor.execute("SELECT balance FROM tokens WHERE id = ?", (token_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                return False
+
+            current_balance = row[0]
+
+            if current_balance < amount_usd:
+                return False
+
+            new_balance = current_balance - amount_usd
+            cursor.execute("UPDATE tokens SET balance = ? WHERE id = ?", (new_balance, token_id))
+            return True
+    except Exception as e:
+        logger.error(f"Ошибка списания баланса: {e}")
+        return False
+
+
+def get_transaction_by_hash(tx_hash: str):
+    try:
+        with get_db_cursor() as cursor:
+            cursor.execute("""
+                           SELECT id,
+                                  token,
+                                  type,
+                                  amount,
+                                  date,
+                                  from_address,
+                                  to_address,
+                                  tx_hash,
+                                  fee,
+                                  explorer_link,
+                                  status
+                           FROM transactions
+                           WHERE tx_hash = ?
+                           """, (tx_hash,))
+
+            row = cursor.fetchone()
+            if row:
+                return list(row)
+            return None
+    except Exception as e:
+        logger.error(f"[ERROR] get_transaction_by_hash: {str(e)}")
+        return None
