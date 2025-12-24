@@ -174,9 +174,12 @@ async def get_transaction_detail(transaction_id: int):
         if not transaction:
             raise HTTPException(status_code=404, detail="Transaction not found")
 
-        token_key = transaction[1]  # db_symbol (например: "usdt_bep20", "btc", "eth")
+        token_key = transaction[1]  # db_symbol
         amount_usd = float(transaction[3]) if transaction[3] else 0
         fee_in_native = float(transaction[8]) if transaction[8] else 0
+
+        # ОКРУГЛЯЕМ fee_in_native ДО 8 ЗНАКОВ
+        fee_in_native_rounded = round(fee_in_native, 8)
 
         token_config = TOKEN_CONFIG.get(token_key, {"pair": None, "display": token_key.upper()})
 
@@ -190,8 +193,8 @@ async def get_transaction_detail(transaction_id: int):
             if price_data and price_data.get("price", 0) > 0:
                 current_price = price_data["price"]
                 amount_token = amount_usd / current_price
-                # Конвертируем fee в USD
-                fee_usd = fee_in_native * current_price
+                # Конвертируем fee в USD (уже округлённое значение!)
+                fee_usd = fee_in_native_rounded * current_price
         except Exception as e:
             print(f"[WARN] Could not fetch price for {token_key}: {e}")
             amount_token = amount_usd
@@ -199,7 +202,6 @@ async def get_transaction_detail(transaction_id: int):
 
         def get_network_for_frontend(db_symbol: str) -> str:
             """Точно такая же логика как в mapping_service.py"""
-            # Для USDT токенов
             if db_symbol.startswith("usdt_"):
                 usdt_network_map = {
                     "usdt_erc20": "eth",
@@ -211,7 +213,6 @@ async def get_transaction_detail(transaction_id: int):
             if db_symbol == "twt":
                 return "bnb"
 
-            # Для нативных монет - ПУСТО
             native_coins = ["btc", "eth", "bnb", "matic", "tron", "sol", "ton"]
             if db_symbol in native_coins:
                 return ""
@@ -232,31 +233,48 @@ async def get_transaction_detail(transaction_id: int):
 
         display_symbol = get_display_symbol(token_key)
 
+        # Форматируем fee_currency в зависимости от типа транзакции
+        # Для income: fee в валюте токена (BTC, ETH и т.д.)
+        # Для outcome: fee в валюте комиссии (для USDT - ETH/BNB/TRX)
+        fee_currency = display_symbol
+        if transaction[2] == "outcome":  # исходящая транзакция
+            if token_key.startswith("usdt_"):
+                # Для USDT токенов комиссия в нативной валюте
+                if token_key == "usdt_erc20":
+                    fee_currency = "ETH"
+                elif token_key == "usdt_bep20":
+                    fee_currency = "BNB"
+                elif token_key == "usdt_trc20":
+                    fee_currency = "TRX"
+            elif token_key == "twt":
+                # Для TWT комиссия в BNB
+                fee_currency = "BNB"
+
         total_usd = amount_usd + fee_usd
 
         return {
             "id": transaction[0],
             "token": {
                 "symbol": display_symbol,
-                "db_symbol": token_key,  # Добавляем оригинальный символ
-                "network": network  # "" для нативных, "eth"/"bnb"/"tron" для токенов
+                "db_symbol": token_key,
+                "network": network
             },
-            "type": transaction[2],  # "income" или "outcome"
+            "type": transaction[2],
             "title": f"{'Receive' if transaction[2] == 'income' else 'Send'} {display_symbol}",
-            "amount_token": round(amount_token, 6),
+            "amount_token": round(amount_token, 8),
             "amount_usd": round(amount_usd, 2),
             "date": transaction[4],
             "datetime": transaction[4],
             "from_address": transaction[5] if transaction[5] else "",
             "to_address": transaction[6] if transaction[6] else "",
             "tx_hash": transaction[7] if transaction[7] else "",
-            "fee": fee_in_native,
+            "fee": fee_in_native_rounded,
             "fee_usd": round(fee_usd, 2),
-            "fee_currency": display_symbol,
+            "fee_currency": fee_currency,
             "explorer_link": transaction[9] if transaction[9] else "",
             "status": transaction[10] if len(transaction) > 10 and transaction[10] else "confirmed",
             "total_usd": round(total_usd, 2),
-            "network": network  # Дублируем в корне для удобства
+            "network": network
         }
 
     except HTTPException:

@@ -340,7 +340,7 @@ async def entering_tx_hash(message: types.Message, state: FSMContext):
 
 @router.message(IncomeStates.entering_fee)
 async def entering_fee(message: types.Message, state: FSMContext):
-    """Ввод комиссии"""
+    """Ввод комиссии В USD"""
     if await handle_cancel_in_message(message, state):
         return
 
@@ -350,21 +350,21 @@ async def entering_fee(message: types.Message, state: FSMContext):
     text = message.text.strip().lower()
 
     try:
-        fee = float(text.replace(",", "."))
-        if fee < 0:
+        fee_usd = float(text.replace(",", "."))  # Пользователь вводит USD
+        if fee_usd < 0:
             raise ValueError
     except ValueError:
         await message.answer(
-            "❌ Введите корректное число",
+            "❌ Введите корректное число (комиссия в USD)",
             reply_markup=skip_cancel_keyboard()
         )
         return
 
-    await state.update_data(fee=fee)
+    await state.update_data(fee_usd=fee_usd)
     await state.set_state(IncomeStates.entering_explorer_link)
 
     await message.answer(
-        f"✅ Комиссия установлена: {fee:.4f}\n\n"
+        f"✅ Комиссия установлена: ${fee_usd:,.2f} USD\n\n"
         f"🌐 Введите ссылку на explorer (или нажмите «Пропустить»):",
         reply_markup=skip_cancel_keyboard()
     )
@@ -416,24 +416,23 @@ async def handle_skip_button(call: types.CallbackQuery, state: FSMContext):
 
         await call.message.edit_text(
             f"✅ Сгенерирован хеш: <code>{tx_hash[:20]}...</code>\n\n"
-            f"💰 Комиссия сети для {token_symbol.upper()}:\n\n"
-            f"Введите сумму комиссии или нажмите «Пропустить» для случайной генерации",
+            f"💰 Комиссия сети (в USD):\n\n"
+            f"Введите сумму комиссии или нажмите «Пропустить»",
             parse_mode="HTML",
             reply_markup=skip_cancel_keyboard()
         )
 
     elif current_state == IncomeStates.entering_fee.state:
-        # Пропуск комиссии
         from app.transactions.utils import generate_fee_for_token
         data = await state.get_data()
         token_symbol = data.get('token_symbol', 'eth')
-        fee = generate_fee_for_token(token_symbol)
+        fee_usd = generate_fee_for_token(token_symbol)  # ← Генерируем USD!
 
-        await state.update_data(fee=fee)
+        await state.update_data(fee_usd=fee_usd)
         await state.set_state(IncomeStates.entering_explorer_link)
 
         await call.message.edit_text(
-            f"✅ Сгенерирована комиссия: {fee:.4f}\n\n"
+            f"✅ Сгенерирована комиссия: ${fee_usd:.2f} USD\n\n"
             f"🌐 Введите ссылку на explorer:",
             reply_markup=skip_cancel_keyboard()
         )

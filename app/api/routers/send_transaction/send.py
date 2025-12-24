@@ -1,19 +1,10 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from datetime import datetime
-from .send_service import calculate_transaction_preview, save_transaction_to_db, find_token_in_db, NATIVE_COINS
+from .send_service import calculate_transaction_preview, save_transaction_to_db, find_token_in_db
 from app.db import deduct_token_balance, get_transaction_by_id, get_transaction_by_hash
-from app.transactions.processor import start_transaction_processor
 
 router = APIRouter(prefix="/api/send", tags=["send"])
-
-transaction_processor = None
-
-
-@router.on_event("startup")
-async def startup_event():
-    global transaction_processor
-    transaction_processor = start_transaction_processor()
 
 
 class PreviewRequest(BaseModel):
@@ -24,12 +15,12 @@ class PreviewRequest(BaseModel):
 
 class SendRequest(BaseModel):
     token: str
-    amount: float  # Фактическая сумма отправки (уже скорректированная из preview)
+    amount: float  # Сумма в токенах (0.01299375 BTC)
     to: str
     network_fee: float
-    total_usd: float
+    total_usd: float  # Общая сумма в USD (1132.66)
+    amount_usd: float  # Сумма в USD без комиссии (1130.96)
     is_native: bool = False
-    original_amount: float = None  # Оригинальная сумма с фронта
 
 
 @router.post("/preview")
@@ -69,15 +60,14 @@ async def confirm_transaction(request: SendRequest, background_tasks: Background
         db_symbol = token[1]
         from_address = token[4] if token[4] else "0xYourWalletAddress"
 
-        # Списываем общую сумму (total_usd уже включает комиссию для нативных)
+        # Списываем общую сумму
         if not deduct_token_balance(token[0], request.total_usd):
             raise HTTPException(400, "Недостаточно средств")
 
-        # Для нативных монет amount уже пришел скорректированный (final_send_amount)
-        # Для токенов amount пришел оригинальный
+        # Сохраняем транзакцию с amount_usd из запроса
         transaction_data = {
             "token": db_symbol,
-            "amount_usd": request.amount,  # Уже правильная сумма из фронта
+            "amount_usd": request.amount_usd,  # ← 1130.96 USD из запроса
             "from_address": from_address,
             "to_address": request.to,
             "fee": request.network_fee
@@ -96,7 +86,7 @@ async def confirm_transaction(request: SendRequest, background_tasks: Background
 
         tx_hash = saved_tx[7] if len(saved_tx) > 7 else ""
 
-        # Запускаем фоновую задачу для подтверждения транзакции
+        # Фоновая задача для подтверждения
         background_tasks.add_task(confirm_transaction_background, tx_id)
 
         return {
@@ -106,16 +96,15 @@ async def confirm_transaction(request: SendRequest, background_tasks: Background
                 "id": tx_id,
                 "type": "outcome",
                 "token": request.token.upper(),
-                "amount_token": request.amount,  # Фактическая сумма отправки
-                "amount_usd": request.total_usd,
+                "amount_token": request.amount,  # 0.01299375 BTC
+                "amount_usd": request.total_usd,  # 1132.66 USD (включая комиссию)
                 "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "from_address": from_address,
                 "to_address": request.to,
                 "tx_hash": tx_hash,
                 "fee": request.network_fee,
                 "explorer_link": saved_tx[9] if len(saved_tx) > 9 else "",
-                "status": "pending",
-                "is_native": request.is_native
+                "status": "pending"
             },
             "next_step": "/history"
         }

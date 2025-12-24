@@ -19,16 +19,16 @@ BINANCE_PAIRS = {
 # Нативные монеты (платят комиссию собой)
 NATIVE_COINS = ["btc", "eth", "bnb", "matic", "tron", "sol", "ton", "pol"]
 
-# Оптимизированные базовые комиссии (конец 2025)
+# Оптимизированные комиссии (конец 2025)
 BASE_FEES = {
-    "ETH": 0.001,  # ~$3-4 вместо $10-15
-    "BNB": 0.00025,  # ~$0.15 вместо $0.3
-    "TRX": 5,  # ~$0.5 вместо $1
-    "MATIC": 0.05,  # ~$0.04 вместо $0.08
-    "BTC": 0.00005,  # ~$5 вместо $20
-    "SOL": 0.000005,  # ~$0.1 вместо $0.2
-    "TON": 0.05,  # ~$0.3 вместо $0.6
-    "POL": 0.05,  # ~$0.04 вместо $0.08
+    "ETH": 0.0005,  # ~$2-3
+    "BNB": 0.00025,  # ~$0.15
+    "TRX": 5,  # ~$0.5
+    "MATIC": 0.05,  # ~$0.04
+    "BTC": 0.00002,  # ~$2
+    "SOL": 0.000005,  # ~$0.1
+    "TON": 0.05,  # ~$0.3
+    "POL": 0.05,  # ~$0.04
 }
 
 
@@ -73,7 +73,7 @@ async def get_estimated_gas_fee(symbol: str) -> float:
 
     fee_symbol = fee_symbol_map.get(symbol, symbol.upper())
 
-    # Fallback: используем оптимизированные базовые комиссии
+    # Используем оптимизированные базовые комиссии
     if fee_symbol in BASE_FEES:
         base_fee_native = BASE_FEES[fee_symbol]
         price = await get_real_binance_price(fee_symbol)
@@ -84,15 +84,15 @@ async def get_estimated_gas_fee(symbol: str) -> float:
     else:
         base_fee_usd = 1.5
 
-    # Добавляем небольшой рандом (+/- 10%)
+    # Небольшая рандомизация
     variation = random.uniform(0.9, 1.1)
     fee_usd = round(base_fee_usd * variation, 4)
 
-    # Оптимизированные лимиты комиссий
+    # Лимиты комиссий
     if fee_usd < 0.05:
-        fee_usd = 0.05  # Минимум 5 центов
+        fee_usd = 0.05
     elif fee_usd > 25:
-        fee_usd = 25  # Максимум $25 (вместо 50)
+        fee_usd = 25
 
     return fee_usd
 
@@ -175,17 +175,17 @@ async def calculate_transaction_preview(token_symbol: str, amount: float, to_add
     fee_currency = fee_currency_map.get(db_symbol, token_symbol.upper())
 
     # Рассчитываем комиссию в нативной валюте
-    if is_native:
-        # Для нативных монет комиссия в той же валюте
-        fee_native = fee_usd / native_price if native_price > 0 else 0
+    fee_native = fee_usd / native_price if native_price > 0 else 0
 
+    # Для нативных монет корректируем сумму отправки
+    if is_native:
         # Баланс в токенах
         token_balance = balance_usd / token_price if token_price > 0 else 0
 
         # Проверяем, не превышает ли сумма + комиссия баланс
         if amount + fee_native > token_balance:
             # Автоматически корректируем
-            final_send_amount = max(0, token_balance - fee_native)
+            final_send_amount = max(0.00000001, token_balance - fee_native)  # Минимум 1 сатоши
             was_adjusted = True
             # Пересчитываем amount_usd для скорректированной суммы
             amount_usd = final_send_amount * token_price
@@ -197,36 +197,46 @@ async def calculate_transaction_preview(token_symbol: str, amount: float, to_add
         total_usd = amount_usd + fee_usd
 
     else:
-        # Для токенов комиссия в нативной валюте сети
-        fee_native = fee_usd / native_price if native_price > 0 else 0
+        # Для токенов сумма не корректируется
         final_send_amount = amount
         was_adjusted = False
         total_usd = amount_usd  # Комиссия оплачивается отдельно
 
     # ОКРУГЛЕНИЕ ВСЕХ ЗНАЧЕНИЙ
-    def round_amount(value, decimals=8):
-        """Округление суммы с правильным количеством знаков"""
-        return round(value, decimals)
+    # Функция для правильного округления
+    def smart_round(value: float, is_token_amount: bool = False) -> float:
+        """Умное округление с учетом типа значения"""
+        if value == 0:
+            return 0.0
 
-    def round_fee(value, decimals=6):
-        """Округление комиссии"""
-        return round(value, decimals)
+        if is_token_amount:
+            # Для сумм токенов: максимум 8 знаков
+            return round(value, 8)
+        elif value < 0.001:
+            # Для очень маленьких значений: 8 знаков
+            return round(value, 8)
+        elif value < 1:
+            # Для значений < 1: 6 знаков
+            return round(value, 6)
+        else:
+            # Для больших значений: 2 знака
+            return round(value, 2)
 
     # Округляем значения
-    token_amount_display = round_amount(amount, 8)  # Что показываем пользователю
-    final_send_amount = round_amount(final_send_amount, 8)  # Что будем отправлять
-    fee_native = round_fee(fee_native, 6)
+    token_amount_display = smart_round(amount, True)  # Что показываем пользователю
+    final_send_amount = smart_round(final_send_amount, True)  # Что будем отправлять
+    fee_native = smart_round(fee_native, True)
     fee_usd = round(fee_usd, 4)
     amount_usd = round(amount_usd, 2)
     total_usd = round(total_usd, 2)
     token_price = round(token_price, 4)
 
-    # Рассчитываем баланс в токенах
+    # Баланс для отображения
     if db_symbol.startswith("usdt_"):
         token_balance_display = balance_usd
     else:
         token_balance_display = balance_usd / token_price if token_price > 0 else 0
-    token_balance_display = round_amount(token_balance_display, 8)
+    token_balance_display = smart_round(token_balance_display, True)
 
     # Определяем сеть
     network_map = {
@@ -256,7 +266,7 @@ async def calculate_transaction_preview(token_symbol: str, amount: float, to_add
                 "name": token_name
             },
             "amounts": {
-                "token_amount": token_amount_display,  # Что показываем пользователю (оригинальная сумма)
+                "token_amount": token_amount_display,  # Что показываем пользователю
                 "token_price": token_price,
                 "amount_usd": amount_usd,
                 "network_fee": fee_native,
@@ -265,7 +275,7 @@ async def calculate_transaction_preview(token_symbol: str, amount: float, to_add
                 "total_usd": total_usd,
                 "is_native": is_native,
                 "was_adjusted": was_adjusted,
-                "final_send_amount": final_send_amount  # Что будем фактически отправлять
+                "final_send_amount": final_send_amount  # Что фактически отправится
             },
             "addresses": {
                 "from": from_address,
@@ -289,21 +299,21 @@ def save_transaction_to_db(transaction_data: Dict) -> int:
             tx_hash = generate_tx_hash(crypto_type)
 
             cursor.execute("""
-                           INSERT INTO transactions
-                           (token, type, amount, date, from_address, to_address, tx_hash, fee, explorer_link, status)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                           """, (
-                               transaction_data["token"],
-                               "outcome",
-                               transaction_data["amount_usd"],
-                               datetime.now().strftime("%Y-%m-%d %H:%M"),
-                               transaction_data["from_address"],
-                               transaction_data["to_address"],
-                               tx_hash,
-                               transaction_data["fee"],
-                               f"https://etherscan.io/tx/{tx_hash}",
-                               "pending"
-                           ))
+                INSERT INTO transactions
+                (token, type, amount, date, from_address, to_address, tx_hash, fee, explorer_link, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                transaction_data["token"],
+                "outcome",
+                transaction_data["amount_usd"],
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+                transaction_data["from_address"],
+                transaction_data["to_address"],
+                tx_hash,
+                transaction_data["fee"],
+                f"https://etherscan.io/tx/{tx_hash}",
+                "pending"
+            ))
             return cursor.lastrowid
     except Exception as e:
         print(f"[DB ERROR] Save transaction: {e}")
