@@ -1,13 +1,12 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from datetime import datetime
-from .send_service import calculate_transaction_preview, save_transaction_to_db, find_token_in_db
+from .send_service import calculate_transaction_preview, save_transaction_to_db, find_token_in_db, NATIVE_COINS
 from app.db import deduct_token_balance, get_transaction_by_id, get_transaction_by_hash
 from app.transactions.processor import start_transaction_processor
 
 router = APIRouter(prefix="/api/send", tags=["send"])
 
-# Запускаем процессор транзакций при старте
 transaction_processor = None
 
 
@@ -25,10 +24,12 @@ class PreviewRequest(BaseModel):
 
 class SendRequest(BaseModel):
     token: str
-    amount: float
+    amount: float  # Фактическая сумма отправки (уже скорректированная из preview)
     to: str
     network_fee: float
     total_usd: float
+    is_native: bool = False
+    original_amount: float = None  # Оригинальная сумма с фронта
 
 
 @router.post("/preview")
@@ -65,14 +66,18 @@ async def confirm_transaction(request: SendRequest, background_tasks: Background
         if not token:
             raise HTTPException(404, "Токен не найден")
 
+        db_symbol = token[1]
         from_address = token[4] if token[4] else "0xYourWalletAddress"
 
+        # Списываем общую сумму (total_usd уже включает комиссию для нативных)
         if not deduct_token_balance(token[0], request.total_usd):
             raise HTTPException(400, "Недостаточно средств")
 
+        # Для нативных монет amount уже пришел скорректированный (final_send_amount)
+        # Для токенов amount пришел оригинальный
         transaction_data = {
-            "token": token[1],
-            "amount_usd": request.total_usd,
+            "token": db_symbol,
+            "amount_usd": request.amount,  # Уже правильная сумма из фронта
             "from_address": from_address,
             "to_address": request.to,
             "fee": request.network_fee
@@ -101,7 +106,7 @@ async def confirm_transaction(request: SendRequest, background_tasks: Background
                 "id": tx_id,
                 "type": "outcome",
                 "token": request.token.upper(),
-                "amount_token": request.amount,
+                "amount_token": request.amount,  # Фактическая сумма отправки
                 "amount_usd": request.total_usd,
                 "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "from_address": from_address,
@@ -109,7 +114,8 @@ async def confirm_transaction(request: SendRequest, background_tasks: Background
                 "tx_hash": tx_hash,
                 "fee": request.network_fee,
                 "explorer_link": saved_tx[9] if len(saved_tx) > 9 else "",
-                "status": "pending"  # Изначально pending
+                "status": "pending",
+                "is_native": request.is_native
             },
             "next_step": "/history"
         }
@@ -125,11 +131,9 @@ async def confirm_transaction_background(tx_id: int):
     import asyncio
     import random
 
-    # Рандомная задержка 5-10 секунд
     delay = random.uniform(5, 10)
     await asyncio.sleep(delay)
 
-    # Меняем статус на confirmed
     from app.db import update_transaction_status
     update_transaction_status(tx_id, "confirmed")
 
